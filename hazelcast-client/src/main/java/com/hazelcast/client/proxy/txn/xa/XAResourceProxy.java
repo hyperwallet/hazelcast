@@ -37,6 +37,7 @@ import javax.transaction.xa.XAResource;
 import javax.transaction.xa.Xid;
 import java.util.Collection;
 import java.util.List;
+import java.util.Stack;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -55,6 +56,7 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
     private final ConcurrentMap<Xid, List<TransactionContext>> xidContextMap
             = new ConcurrentHashMap<Xid, List<TransactionContext>>();
     private final AtomicInteger timeoutInSeconds = new AtomicInteger(DEFAULT_TIMEOUT_SECONDS);
+    private final ConcurrentMap<Long, Stack<TransactionContext>> transactionContextStacks = new ConcurrentHashMap<Long, Stack<TransactionContext>>();
 
     public XAResourceProxy(String serviceName, String objectName) {
         super(serviceName, objectName);
@@ -73,6 +75,7 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
                 }
                 TransactionContext context = createTransactionContext(xid);
                 contexts.add(context);
+                putInStack(threadContext);
                 threadContextMap.put(threadId, context);
                 break;
             case TMRESUME:
@@ -92,6 +95,24 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
         }
     }
 
+    private void putInStack(TransactionContext transactionContext) {
+        if (transactionContext == null) {
+            return;
+        }
+
+        long threadId = currentThreadId();
+
+        Stack<TransactionContext> stack;
+        if (transactionContextStacks.containsKey(threadId)) {
+            stack = transactionContextStacks.get(threadId);
+        } else {
+            stack = new Stack<TransactionContext>();
+            transactionContextStacks.put(threadId, stack);
+        }
+
+        stack.push(transactionContext);
+    }
+
     private TransactionContext createTransactionContext(Xid xid) {
         ClientContext clientContext = getContext();
         ClientTransactionManagerService transactionManager = clientContext.getTransactionManager();
@@ -104,6 +125,7 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
     public void end(Xid xid, int flags) throws XAException {
         long threadId = currentThreadId();
         TransactionContext threadContext = threadContextMap.remove(threadId);
+
         ILogger logger = getContext().getLoggingService().getLogger(this.getClass());
         if (threadContext == null && logger.isFinestEnabled()) {
             logger.finest("There is no TransactionContext for the current thread: " + threadId);
@@ -111,6 +133,11 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
         List<TransactionContext> contexts = xidContextMap.get(xid);
         if (contexts == null && logger.isFinestEnabled()) {
             logger.finest("There is no TransactionContexts for the given xid: " + xid);
+        }
+
+        Stack<TransactionContext> stack = transactionContextStacks.get(threadId);
+        if (stack != null && !stack.empty()) {
+            threadContextMap.putIfAbsent(threadId, stack.pop());
         }
     }
 

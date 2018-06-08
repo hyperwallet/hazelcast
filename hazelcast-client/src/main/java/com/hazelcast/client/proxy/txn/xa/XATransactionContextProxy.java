@@ -18,22 +18,13 @@ package com.hazelcast.client.proxy.txn.xa;
 
 import com.hazelcast.client.connection.nio.ClientConnection;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
-import com.hazelcast.client.proxy.txn.ClientTxnListProxy;
-import com.hazelcast.client.proxy.txn.ClientTxnMapProxy;
-import com.hazelcast.client.proxy.txn.ClientTxnMultiMapProxy;
-import com.hazelcast.client.proxy.txn.ClientTxnQueueProxy;
-import com.hazelcast.client.proxy.txn.ClientTxnSetProxy;
+import com.hazelcast.client.proxy.txn.*;
 import com.hazelcast.client.spi.ClientTransactionContext;
 import com.hazelcast.client.spi.impl.ClientTransactionManagerServiceImpl;
 import com.hazelcast.collection.impl.list.ListService;
 import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.collection.impl.set.SetService;
-import com.hazelcast.core.HazelcastException;
-import com.hazelcast.core.TransactionalList;
-import com.hazelcast.core.TransactionalMap;
-import com.hazelcast.core.TransactionalMultiMap;
-import com.hazelcast.core.TransactionalQueue;
-import com.hazelcast.core.TransactionalSet;
+import com.hazelcast.core.*;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.transaction.TransactionException;
@@ -134,7 +125,8 @@ public class XATransactionContextProxy implements ClientTransactionContext {
     public <T extends TransactionalObject> T getTransactionalObject(String serviceName, String name) {
         if (transaction.getState() != Transaction.State.ACTIVE) {
             throw new TransactionNotActiveException("No transaction is found while accessing "
-                    + "transactional object -> " + serviceName + "[" + name + "]!");
+                    + "transactional object -> " + serviceName + "[" + name + "]! " + "Transaction id: " + transaction.getTxnId()
+                    + " state: " + transaction.getState() + " thread:" + transaction.getXid() + " " + transaction.getConnection().toString());
         }
         TransactionalObjectKey key = new TransactionalObjectKey(serviceName, name);
         TransactionalObject obj = txnObjectMap.get(key);

@@ -70,7 +70,7 @@ public class XATransactionProxy {
             ClientMessage request = XATransactionCreateCodec.encodeRequest(xid, timeout);
             ClientMessage response = invoke(request);
             txnId = XATransactionCreateCodec.decodeResponse(response).response;
-            state = ACTIVE;
+            setState(ACTIVE);
         } catch (Exception e) {
             throw ExceptionUtil.rethrow(e);
         }
@@ -84,9 +84,9 @@ public class XATransactionProxy {
             }
             ClientMessage request = XATransactionPrepareCodec.encodeRequest(txnId);
             invoke(request);
-            state = PREPARED;
+            setState(PREPARED);
         } catch (Exception e) {
-            state = ROLLING_BACK;
+            setState(ROLLING_BACK);
             throw ExceptionUtil.rethrow(e);
         }
     }
@@ -100,25 +100,25 @@ public class XATransactionProxy {
             if (!onePhase && state != PREPARED) {
                 throw new TransactionException("Transaction is not prepared");
             }
-            state = COMMITTING;
+            setState(COMMITTING);
             ClientMessage request = XATransactionCommitCodec.encodeRequest(txnId, onePhase);
             invoke(request);
-            state = COMMITTED;
+            setState(COMMITTED);
         } catch (Exception e) {
-            state = COMMIT_FAILED;
+            setState(COMMIT_FAILED);
             throw ExceptionUtil.rethrow(e);
         }
     }
 
     void rollback() {
-        state = ROLLING_BACK;
+        setState(ROLLING_BACK);
         try {
             ClientMessage request = XATransactionRollbackCodec.encodeRequest(txnId);
             invoke(request);
         } catch (Exception exception) {
             logger.warning("Exception while rolling back the transaction", exception);
         }
-        state = ROLLED_BACK;
+        setState(ROLLED_BACK);
     }
 
     public String getTxnId() {

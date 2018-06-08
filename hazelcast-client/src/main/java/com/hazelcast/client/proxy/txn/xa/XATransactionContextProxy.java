@@ -125,7 +125,8 @@ public class XATransactionContextProxy implements ClientTransactionContext {
     public <T extends TransactionalObject> T getTransactionalObject(String serviceName, String name) {
         if (transaction.getState() != Transaction.State.ACTIVE) {
             throw new TransactionNotActiveException("No transaction is found while accessing "
-                    + "transactional object -> " + serviceName + "[" + name + "]!");
+                    + "transactional object -> " + serviceName + "[" + name + "]! " + "Transaction id: " + transaction.getTxnId()
+                    + " state: " + transaction.getState() + " thread:" + transaction.getXid() + " " + transaction.getConnection().toString());
         }
         TransactionalObjectKey key = new TransactionalObjectKey(serviceName, name);
         TransactionalObject obj = txnObjectMap.get(key);
@@ -150,7 +151,6 @@ public class XATransactionContextProxy implements ClientTransactionContext {
         return (T) obj;
     }
 
-    public XATransactionProxy getTransactionProxy() { return getTransaction(); }
     public XATransactionProxy getTransaction() {
         return transaction;
     }

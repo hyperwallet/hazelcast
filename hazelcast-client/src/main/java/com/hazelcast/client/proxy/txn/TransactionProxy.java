@@ -130,8 +130,13 @@ public final class TransactionProxy {
         if (threadId != Thread.currentThread().getId()) {
             throw new IllegalStateException("Transaction cannot span multiple threads! "
                     + "This thread: " + Thread.currentThread().getId()
-                    + "Variable threadId: " + threadId);
+                    + "Variable threadId: " + threadId
+                    + "transaction state: " + state);
         }
+    }
+
+    public long getThreadId() {
+        return threadId;
     }
 
     private void checkTimeout() {

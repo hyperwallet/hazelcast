@@ -34,15 +34,9 @@ import com.hazelcast.util.ThreadUtil;
 import java.util.concurrent.Future;
 
 import static com.hazelcast.transaction.impl.Transaction.State;
-import static com.hazelcast.transaction.impl.Transaction.State.ACTIVE;
-import static com.hazelcast.transaction.impl.Transaction.State.COMMITTED;
-import static com.hazelcast.transaction.impl.Transaction.State.COMMITTING;
-import static com.hazelcast.transaction.impl.Transaction.State.COMMIT_FAILED;
-import static com.hazelcast.transaction.impl.Transaction.State.NO_TXN;
-import static com.hazelcast.transaction.impl.Transaction.State.ROLLED_BACK;
-import static com.hazelcast.transaction.impl.Transaction.State.ROLLING_BACK;
+import static com.hazelcast.transaction.impl.Transaction.State.*;
 
-final class TransactionProxy {
+public final class TransactionProxy {
 
     private static final ThreadLocal<Boolean> TRANSACTION_EXISTS = new ThreadLocal<Boolean>();
 
@@ -87,7 +81,7 @@ final class TransactionProxy {
             ClientMessage response = invoke(request);
             TransactionCreateCodec.ResponseParameters result = TransactionCreateCodec.decodeResponse(response);
             txnId = result.response;
-            state = ACTIVE;
+            setState(ACTIVE);
         } catch (Exception e) {
             TRANSACTION_EXISTS.set(null);
             throw ExceptionUtil.rethrow(e);
@@ -99,14 +93,14 @@ final class TransactionProxy {
             if (state != ACTIVE) {
                 throw new TransactionNotActiveException("Transaction is not active");
             }
-            state = COMMITTING;
+            setState(COMMITTING);
             checkThread();
             checkTimeout();
             ClientMessage request = TransactionCommitCodec.encodeRequest(txnId, threadId);
             invoke(request);
-            state = COMMITTED;
+            setState(COMMITTED);
         } catch (Exception e) {
-            state = COMMIT_FAILED;
+            setState(COMMIT_FAILED);
             throw ExceptionUtil.rethrow(e);
         } finally {
             TRANSACTION_EXISTS.set(null);
@@ -118,7 +112,7 @@ final class TransactionProxy {
             if (state == NO_TXN || state == ROLLED_BACK) {
                 throw new IllegalStateException("Transaction is not active");
             }
-            state = ROLLING_BACK;
+            setState(ROLLING_BACK);
             checkThread();
             try {
                 ClientMessage request = TransactionRollbackCodec.encodeRequest(txnId, threadId);
@@ -126,7 +120,7 @@ final class TransactionProxy {
             } catch (Exception exception) {
                 logger.warning("Exception while rolling back the transaction", exception);
             }
-            state = ROLLED_BACK;
+            setState(ROLLED_BACK);
         } finally {
             TRANSACTION_EXISTS.set(null);
         }
@@ -134,8 +128,15 @@ final class TransactionProxy {
 
     private void checkThread() {
         if (threadId != Thread.currentThread().getId()) {
-            throw new IllegalStateException("Transaction cannot span multiple threads!");
+            throw new IllegalStateException("Transaction cannot span multiple threads! "
+                    + "This thread: " + Thread.currentThread().getId()
+                    + "Variable threadId: " + threadId
+                    + "transaction state: " + state);
         }
+    }
+
+    public long getThreadId() {
+        return threadId;
     }
 
     private void checkTimeout() {
@@ -152,5 +153,15 @@ final class TransactionProxy {
         } catch (Exception e) {
             throw ExceptionUtil.rethrow(e);
         }
+    }
+
+    private void setState(State state) {
+        //todo I can log state progression & stackTraces if needed?
+        this.state = state;
+        logger.finest("setState: " + state.name());
+    }
+
+    public ClientConnection getConnection() {
+        return connection;
     }
 }

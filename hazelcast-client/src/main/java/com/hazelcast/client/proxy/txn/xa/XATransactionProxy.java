@@ -28,6 +28,7 @@ import com.hazelcast.logging.ILogger;
 import com.hazelcast.transaction.TransactionException;
 import com.hazelcast.transaction.TransactionNotActiveException;
 import com.hazelcast.transaction.impl.Transaction;
+import com.hazelcast.transaction.impl.Transaction.State;
 import com.hazelcast.transaction.impl.xa.SerializableXID;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.ExceptionUtil;
@@ -37,14 +38,7 @@ import javax.transaction.xa.Xid;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import static com.hazelcast.transaction.impl.Transaction.State.ACTIVE;
-import static com.hazelcast.transaction.impl.Transaction.State.COMMITTED;
-import static com.hazelcast.transaction.impl.Transaction.State.COMMITTING;
-import static com.hazelcast.transaction.impl.Transaction.State.COMMIT_FAILED;
-import static com.hazelcast.transaction.impl.Transaction.State.NO_TXN;
-import static com.hazelcast.transaction.impl.Transaction.State.PREPARED;
-import static com.hazelcast.transaction.impl.Transaction.State.ROLLED_BACK;
-import static com.hazelcast.transaction.impl.Transaction.State.ROLLING_BACK;
+import static com.hazelcast.transaction.impl.Transaction.State.*;
 
 /**
  * This class does not need to be thread-safe, it is only used via XAResource
@@ -76,7 +70,7 @@ public class XATransactionProxy {
             ClientMessage request = XATransactionCreateCodec.encodeRequest(xid, timeout);
             ClientMessage response = invoke(request);
             txnId = XATransactionCreateCodec.decodeResponse(response).response;
-            state = ACTIVE;
+            setState(ACTIVE);
         } catch (Exception e) {
             throw ExceptionUtil.rethrow(e);
         }
@@ -90,9 +84,9 @@ public class XATransactionProxy {
             }
             ClientMessage request = XATransactionPrepareCodec.encodeRequest(txnId);
             invoke(request);
-            state = PREPARED;
+            setState(PREPARED);
         } catch (Exception e) {
-            state = ROLLING_BACK;
+            setState(ROLLING_BACK);
             throw ExceptionUtil.rethrow(e);
         }
     }
@@ -106,25 +100,25 @@ public class XATransactionProxy {
             if (!onePhase && state != PREPARED) {
                 throw new TransactionException("Transaction is not prepared");
             }
-            state = COMMITTING;
+            setState(COMMITTING);
             ClientMessage request = XATransactionCommitCodec.encodeRequest(txnId, onePhase);
             invoke(request);
-            state = COMMITTED;
+            setState(COMMITTED);
         } catch (Exception e) {
-            state = COMMIT_FAILED;
+            setState(COMMIT_FAILED);
             throw ExceptionUtil.rethrow(e);
         }
     }
 
     void rollback() {
-        state = ROLLING_BACK;
+        setState(ROLLING_BACK);
         try {
             ClientMessage request = XATransactionRollbackCodec.encodeRequest(txnId);
             invoke(request);
         } catch (Exception exception) {
             logger.warning("Exception while rolling back the transaction", exception);
         }
-        state = ROLLED_BACK;
+        setState(ROLLED_BACK);
     }
 
     public String getTxnId() {
@@ -150,5 +144,18 @@ public class XATransactionProxy {
         } catch (Exception e) {
             throw ExceptionUtil.rethrow(e);
         }
+    }
+
+    private void setState(State state) {
+        logger.finest("setStateXA: " + state);
+        this.state = state;
+    }
+
+    public ClientConnection getConnection() {
+        return connection;
+    }
+
+    public SerializableXID getXid() {
+        return xid;
     }
 }
